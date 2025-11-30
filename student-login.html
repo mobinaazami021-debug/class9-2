@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>ورود دانش‌آموز — کلاس 9/2</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">ورود دانش‌آموز — کلاس 9/2</div>
+    <div class="card card-wide">
+      <h3>ورود دانش‌آموز</h3>
+      <input id="studentName" class="input" placeholder="نام و نام خانوادگی" />
+      <input id="roomCode" class="input" placeholder="کد/لینک کلاس (از معلم بگیر)" />
+      <div class="center">
+        <button class="btn" onclick="enter()">ورود به کلاس</button>
+      </div>
+      <p class="small">توجه: معلم باید ابتدا اتاق را بسازد و لینک را در اختیار شما بگذارد.</p>
+    </div>
+  </div>
+
+  <script>
+    function enter(){
+      const name = document.getElementById('studentName').value.trim();
+      const room = document.getElementById('roomCode').value.trim();
+      if(!name){ alert('لطفاً نام خود را وارد کنید'); return; }
+      if(!room){ alert('لطفاً کد/لینک کلاس را از معلم بگیرید'); return; }
+      let roomName = room;
+      try {
+        const u = new URL(room);
+        // اگر لینک کامل است، از pathname کمک می‌گیریم
+        if(u.searchParams.get('room')) roomName = u.searchParams.get('room');
+        else roomName = u.pathname.replace(/^\//,'');
+      } catch(e){}
+      window.location.href = 'classroom.html?role=student&room=' + encodeURIComponent(roomName) + '&name=' + encodeURIComponent(name);
+    }
+  </script>
+</body>
+</html>

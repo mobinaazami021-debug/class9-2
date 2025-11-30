@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>داشبورد معلم — مدرسه پردیس</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .left{float:right;width:48%}
+    .right{float:left;width:48%}
+    .clearfix{clear:both}
+    .smallBtn{padding:8px 10px;border-radius:6px;background:#eee;border:none;cursor:pointer}
+    .file-row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .file-row button{padding:6px 8px}
+    .muted{color:#888}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">پنل معلم — کلاس 9/2 (مدرسه پردیس)</div>
+
+    <div class="card card-wide">
+      <div class="left">
+        <h3>خوش آمدید، <span id="teacherNameEl"></span></h3>
+        <p class="kv">اینجا لیست دانش‌آموزان را می‌توانی وارد یا آپلود کنی، حضور و غیاب را ببینی و اتاق بسازی.</p>
+
+        <h4>مدیریت لیست دانش‌آموزان</h4>
+        <textarea id="rosterArea" rows="8" class="input" placeholder="هر خط یک نام بنویس (مثلاً: علی رضایی)"></textarea>
+        <div class="center">
+          <button class="btn" onclick="saveRoster()">ذخیره لیست</button>
+          <button class="smallBtn" onclick="clearRoster()">پاک کردن لیست</button>
+        </div>
+        <p class="small">یا فایل CSV شامل یک ستون نام‌ها را آپلود کن:</p>
+        <input type="file" id="rosterFile" accept=".csv" />
+        <div class="center" style="margin-top:6px">
+          <button class="btn" onclick="importRoster()">بارگذاری CSV</button>
+        </div>
+
+        <h4 style="margin-top:14px">لیست فعلی دانش‌آموزان</h4>
+        <table class="table" id="rosterTable">
+          <thead><tr><th>ردیف</th><th>نام دانش‌آموز</th><th>وضعیت</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="right">
+        <h4>حضور و غیاب</h4>
+        <p class="kv">هنگامی که دانش‌آموز وارد کلاس می‌شود، زمان ورود ثبت می‌شود.</p>
+        <table class="table" id="attendanceTable">
+          <thead><tr><th>نام</th><th>زمان ورود</th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <h4 style="margin-top:12px">فایل‌های معلم</h4>
+        <p class="kv">می‌توانی فایل (PDF / عکس / zip) آپلود کنی تا دانش‌آموزان دانلود کنند.</p>
+        <input type="file" id="teacherFile" />
+        <div class="center" style="margin-top:8px">
+          <button class="btn" onclick="uploadTeacherFile()">آپلود فایل</button>
+        </div>
+        <div id="filesList" style="margin-top:8px"></div>
+
+        <h4 style="margin-top:12px">ساخت اتاق و مدیریت کلاس</h4>
+        <div class="center">
+          <button class="btn" onclick="createRoom()">ساختن اتاق جدید</button>
+          <button class="btn" id="openClassBtn" style="display:none" onclick="openClass()">رفتن به کلاس (معلم)</button>
+        </div>
+        <div id="roomBox" style="margin-top:8px;display:none">
+          <p class="small">نام اتاق: <strong id="roomName"></strong></p>
+          <p class="small">لینک دانش‌آموزان: <input id="studentLink" class="input" readonly></p>
+          <div class="center">
+            <button class="smallBtn" onclick="copyLink()">کپی لینک</button>
+            <button class="smallBtn" onclick="lockRoom()">قفل با رمز</button>
+            <button class="smallBtn" onclick="unlockRoom()">باز کردن قفل</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="clearfix"></div>
+    </div>
+  </div>
+
+  <script>
+    // کلیدهای localStorage
+    const ROSTER_KEY = 'pardis_roster_9_2';
+    const ATT_KEY = 'pardis_attendance_9_2';
+    const FILES_KEY = 'pardis_files_9_2';
+    const ROOM_KEY = 'pardis_current_room_9_2';
+
+    // نام معلم از URL
+    const params = new URLSearchParams(window.location.search);
+    const teacherName = params.get('name') || 'معلم';
+    document.getElementById('teacherNameEl').innerText = teacherName;
+
+    // بارگذاری لیست اگر موجود است
+    function loadRoster(){
+      const raw = localStorage.getItem(ROSTER_KEY) || '';
+      const arr = raw ? JSON.parse(raw) : [];
+      const tbody = document.querySelector('#rosterTable tbody');
+      tbody.innerHTML = '';
+      arr.forEach((n,i)=> {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${i+1}</td><td>${escapeHtml(n)}</td><td id="status-${i}" class="muted">غایب</td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('rosterArea').value = arr.join('\n');
+    }
+
+    function saveRoster(){
+      const text = document.getElementById('rosterArea').value.trim();
+      const arr = text ? text.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+      localStorage.setItem(ROSTER_KEY, JSON.stringify(arr));
+      // reset attendance
+      localStorage.setItem(ATT_KEY, JSON.stringify({}));
+      loadRoster();
+      renderAttendance();
+      alert('لیست ذخیره شد.');
+    }
+
+    function clearRoster(){
+      if(!confirm('آیا از پاک کردن لیست مطمئنی؟')) return;
+      localStorage.removeItem(ROSTER_KEY);
+      localStorage.removeItem(ATT_KEY);
+      loadRoster();
+      renderAttendance();
+    }
+
+    function importRoster(){
+      const f = document.getElementById('rosterFile').files[0];
+      if(!f){ alert('ابتدا فایل CSV انتخاب کن'); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const txt = e.target.result;
+        const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+        // فرض می‌کنیم هر خط نام است
+        localStorage.setItem(ROSTER_KEY, JSON.stringify(lines));
+        localStorage.setItem(ATT_KEY, JSON.stringify({}));
+        loadRoster();
+        renderAttendance();
+        alert('roster وارد شد ('+lines.length+' نفر).');
+      };
+      reader.readAsText(f,'utf-8');
+    }
+
+    function renderAttendance(){
+      const att = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');
+      const tbody = document.querySelector('#attendanceTable tbody');
+      tbody.innerHTML = '';
+      for(const name in att){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(name)}</td><td>${escapeHtml(att[name])}</td>`;
+        tbody.appendChild(tr);
+      }
+      // update roster status
+      const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '[]');
+      roster.forEach((n,i)=>{
+        const el = document.getElementById('status-'+i);
+        if(el) el.innerText = (att[n] ? 'حاضر' : 'غایب');
+      });
+    }
+
+    // فایل‌ها
+    function loadFiles(){
+      const files = JSON.parse(localStorage.getItem(FILES_KEY) || '[]');
+      const box = document.getElementById('filesList');
+      box.innerHTML = '';
+      files.forEach((f, idx)=>{
+        const div = document.createElement('div');
+        div.className='file-row';
+        const nameSpan = document.createElement('div'); nameSpan.innerText = f.name + ' (' + Math.round(f.size/1024) + ' KB)';
+        const actions = document.createElement('div');
+        const dl = document.createElement('button'); dl.innerText='دانلود'; dl.onclick = ()=> downloadStoredFile(idx);
+        const del = document.createElement('button'); del.innerText='حذف'; del.onclick = ()=> { if(confirm('حذف شود؟')){ removeFile(idx); } };
+        actions.appendChild(dl); actions.appendChild(del);
+        div.appendChild(nameSpan); div.appendChild(actions);
+        box.appendChild(div);
+      });
+    }
+
+    function uploadTeacherFile(){
+      const f = document.getElementById('teacherFile').files[0];
+      if(!f){ alert('ابتدا یک فایل انتخاب کن'); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const arr = JSON.parse(localStorage.getItem(FILES_KEY) || '[]');
+        arr.push({name: f.name, data: e.target.result, size: f.size, uploadedBy: teacherName, time: new Date().toLocaleString()});
+        localStorage.setItem(FILES_KEY, JSON.stringify(arr));
+        loadFiles();
+        alert('فایل آپلود و در دسترس دانش‌آموزان قرار گرفت.');
+      };
+      reader.readAsDataURL(f);
+    }
+
+    function downloadStoredFile(i){
+      const arr = JSON.parse(localStorage.getItem(FILES_KEY) || '[]');
+      const f = arr[i];
+      if(!f) return;
+      const a = document.createElement('a');
+      a.href = f.data;
+      a.download = f.name;
+      a.click();
+    }
+
+    function removeFile(i){
+      const arr = JSON.parse(localStorage.getItem(FILES_KEY) || '[]');
+      arr.splice(i,1);
+      localStorage.setItem(FILES_KEY, JSON.stringify(arr));
+      loadFiles();
+    }
+
+    // ساخت اتاق
+    function makeId(len=8){
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let s=''; for(let i=0;i<len;i++) s+=chars.charAt(Math.floor(Math.random()*chars.length));
+      return s;
+    }
+
+    function createRoom(){
+      const room = 'Pardis_9_2_session_' + makeId(8);
+      // ذخیره room در localStorage (معتبرترین جا برای این نسخه بدون سرور)
+      localStorage.setItem(ROOM_KEY, JSON.stringify({room: room, createdBy: teacherName, createdAt: new Date().toLocaleString()}));
+      document.getElementById('roomName').innerText = room;
+      const link = location.origin + location.pathname.replace(/teacher-dashboard.html$/,'') + 'classroom.html?role=student&room=' + encodeURIComponent(room);
+      document.getElementById('studentLink').value = link;
+      document.getElementById('roomBox').style.display='block';
+      document.getElementById('openClassBtn').style.display='inline-block';
+      alert('اتاق ساخته شد. لینک را کپی کن و فقط به دانش‌آموزان بده وقتی آماده‌ای.');
+    }
+
+    function copyLink(){
+      const el = document.getElementById('studentLink');
+      el.select(); document.execCommand('copy');
+      alert('لینک کپی شد. آن را به دانش‌آموزان بده.');
+    }
+
+    function openClass(){
+      const roomObj = JSON.parse(localStorage.getItem(ROOM_KEY) || 'null');
+      if(!roomObj){ alert('ابتدا اتاق بساز'); return; }
+      window.location.href = 'classroom.html?role=teacher&room=' + encodeURIComponent(roomObj.room) + '&name=' + encodeURIComponent(teacherName);
+    }
+
+    // قفل/باز قفل: در این نسخه، قفل با قرار دادن رمز در localStorage شبیه‌سازی می‌شود و معلم می‌تواند رمز را به دانش‌آموزان بدهد.
+    function lockRoom(){
+      const pwd = prompt('لطفاً رمز ورود برای اتاق وارد کن (به دانش‌آموزان بده):');
+      if(!pwd) return;
+      const roomObj = JSON.parse(localStorage.getItem(ROOM_KEY) || '{}');
+      roomObj.password = pwd;
+      localStorage.setItem(ROOM_KEY, JSON.stringify(roomObj));
+      alert('رمز ست شد. دانش‌آموزان برای ورود باید رمز را از شما دریافت کنند.');
+    }
+
+    function unlockRoom(){
+      const roomObj = JSON.parse(localStorage.getItem(ROOM_KEY) || '{}');
+      delete roomObj.password;
+      localStorage.setItem(ROOM_KEY, JSON.stringify(roomObj));
+      alert('قفل برداشته شد.');
+    }
+
+    // حضور: وقتی دانش‌آموز وارد شد، او یک رکورد در localStorage ثبت می‌کند.
+    // اینجا فقط نمایش را بارگذاری می‌کنیم.
+    function renderInitial(){
+      loadRoster(); renderAttendance(); loadFiles();
+      // نمایش اتاق اگر ساخته شده
+      const ro = JSON.parse(localStorage.getItem(ROOM_KEY) || 'null');
+      if(ro){
+        document.getElementById('roomBox').style.display='block';
+        document.getElementById('roomName').innerText = ro.room;
+        document.getElementById('studentLink').value = location.origin + location.pathname.replace(/teacher-dashboard.html$/,'') + 'classroom.html?role=student&room=' + encodeURIComponent(ro.room);
+        document.getElementById('openClassBtn').style.display='inline-block';
+      }
+    }
+
+    // تابعی که دانش‌آموز هنگام ورود اجرا می‌کند تا حضور ثبت شود.
+    function studentMarkAttendance(name){
+      if(!name) return;
+      const ro = JSON.parse(localStorage.getItem(ROOM_KEY) || 'null');
+      if(!ro) return;
+      const att = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');
+      if(!att[name]) att[name] = new Date().toLocaleString();
+      localStorage.setItem(ATT_KEY, JSON.stringify(att));
+      renderAttendance();
+    }
+
+    // تابع برای دریافت تکالیف ارسالی دانش‌آموز (معلم می‌تواند آنها را ببیند)
+    // در این نسخه تکالیف در localStorage با کلید submissions_9_2 ذخیره می‌شوند.
+    const SUB_KEY = 'pardis_submissions_9_2';
+    function loadSubmissions(){
+      const subs = JSON.parse(localStorage.getItem(SUB_KEY) || '[]');
+      // نمایش زیر لیست فایل‌ها در انتهای صفحه (برای عدم شلوغی من در همینجا نشان می‌دهم)
+      const elId = 'submissionsList';
+      let box = document.getElementById(elId);
+      if(!box){
+        box = document.createElement('div'); box.id = elId; box.style.marginTop='12px';
+        const title = document.createElement('h4'); title.innerText='تکالیف ارسالی دانش‌آموزان';
+        box.appendChild(title);
+        document.querySelector('.right')?.appendChild(box);
+      }
+      box.innerHTML = '<h4>تکالیف ارسالی دانش‌آموزان</h4>';
+      if(!subs.length) box.innerHTML += '<p class="kv">هیچ تکلیفی ارسال نشده</p>';
+      subs.forEach((s,idx)=>{
+        const row = document.createElement('div'); row.className='file-row';
+        const left = document.createElement('div'); left.innerText = `${s.name} — ${s.student} — ${s.time}`;
+        const right = document.createElement('div');
+        const dl = document.createElement('button'); dl.innerText='دانلود'; dl.onclick=()=> {
+          const a=document.createElement('a'); a.href=s.data; a.download=s.name; a.click();
+        };
+        const del = document.createElement('button'); del.innerText='حذف'; del.onclick=()=> {
+          if(confirm('حذف شود؟')){ subs.splice(idx,1); localStorage.setItem(SUB_KEY, JSON.stringify(subs)); loadSubmissions(); alert('حذف شد'); }
+        };
+        right.appendChild(dl); right.appendChild(del);
+        row.appendChild(left); row.appendChild(right);
+        box.appendChild(row);
+      });
+    }
+
+    // utility
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // بارگذاری اولیه
+    renderInitial();
+    loadSubmissions();
+
+    // یک تابع برای استفاده توسط classroom.html جهت ثبت حضور (اگر ریل تایم نبود)
+    window.__studentMarkAttendance = studentMarkAttendance;
+
+  </script>
+</body>
+</html>

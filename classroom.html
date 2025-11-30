@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>کلاس 9/2 — مدرسه پردیس</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{margin:0; padding:0; direction:rtl; font-family:Tahoma}
+    #top{background:#0b63d6;color:#fff;padding:10px;display:flex;align-items:center;justify-content:space-between}
+    #controls{display:flex;gap:8px}
+    #jitsi-container{width:100%;height:calc(100vh - 160px);background:#000}
+    .ctrl-btn{padding:8px 10px;border-radius:6px;background:#fff;color:#0b63d6;border:none;cursor:pointer;font-weight:600}
+    .danger{background:#ff6b6b;color:#fff}
+    #side{padding:12px;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,0.06)}
+    #mainWrap{display:flex;gap:12px;padding:12px}
+    #side{width:320px}
+    #infoBar{font-size:14px;color:#333}
+    .mutedNote{color:#666;font-size:13px}
+  </style>
+</head>
+<body>
+  <div id="top">
+    <div>
+      <strong id="title">کلاس 9/2 — مدرسه پردیس</strong>
+      <div id="sub" class="small mutedNote"></div>
+    </div>
+    <div id="controls"></div>
+  </div>
+
+  <div id="mainWrap">
+    <div style="flex:1">
+      <div id="jitsi-container"></div>
+      <div style="padding:8px;background:#fff;margin-top:8px">
+        <div id="sessionInfo" class="small"></div>
+      </div>
+    </div>
+
+    <div id="side">
+      <div id="infoBar">
+        <p><strong id="userRole"></strong></p>
+        <p id="roomInfo" class="mutedNote"></p>
+      </div>
+
+      <hr/>
+      <div>
+        <h4>فایل‌های معلم</h4>
+        <div id="publicFiles"></div>
+      </div>
+
+      <hr/>
+      <div id="submissionArea">
+        <h4>ارسال تکلیف</h4>
+        <p class="kv">اگر معلم خواسته تکلیف بفرستید، از اینجا آپلود کنید (فقط وقتی معلم لینک را منتشر کرده باشد).</p>
+        <input type="file" id="hwFile" />
+        <div class="center" style="margin-top:6px">
+          <button class="btn" onclick="submitHomework()">ارسال تکلیف</button>
+        </div>
+        <div id="submitMsg" class="small mutedNote" style="margin-top:6px"></div>
+      </div>
+
+      <hr/>
+      <div>
+        <h4>حضور شما</h4>
+        <p id="attendanceMsg" class="kv">وضعیت حضور نمایش داده می‌شود.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://8x8.vc/external_api.js"></script>
+  <script>
+    // پارسر پارامترها
+    const params = new URLSearchParams(window.location.search);
+    const role = (params.get('role') || 'student');
+    const room = params.get('room') || 'Pardis_9_2_session_default';
+    const name = params.get('name') || (role==='teacher' ? 'معلم' : 'دانش‌آموز');
+
+    document.getElementById('sub').innerText = name + ' — نقش: ' + (role==='teacher' ? 'معلم' : 'دانش‌آموز');
+    document.getElementById('userRole').innerText = (role==='teacher' ? 'نمایش برای معلم' : 'نمایش برای دانش‌آموز');
+
+    // اتاق فعلی را از localStorage می‌خوانیم تا مطمئن شویم معلم واقعاً آن را ساخته
+    const ROOM_KEY = 'pardis_current_room_9_2';
+    const roomObj = JSON.parse(localStorage.getItem(ROOM_KEY) || 'null');
+    const allowedRoom = roomObj ? roomObj.room : null;
+
+    // اگر نقش دانش‌آموز است، باید room با roomObj یکی باشد (یا معلم لینک را عمداً منتشر کرده باشد)
+    if(role === 'student'){
+      if(!roomObj || room !== allowedRoom){
+        // نمایش پیام انتظار
+        document.getElementById('jitsi-container').innerHTML = '<div style="padding:30px;text-align:center;background:#fff">معلم هنوز اتاق را آماده نکرده یا لینک معتبر نیست. منتظر اطلاع معلم باشید.</div>';
+        // اما اگر دانش‌آموز لینک و رمز درست داشته باشد (در این نسخه رمز در roomObj ذخیره می‌شود)، بررسی می‌کنیم:
+        // در نسخه ساده ما تا معلم لینک ندهد، دانش‌آموز نمی‌تواند وارد شود.
+        // همچنین اجازه می‌دهیم دانش‌آموز دکمه‌ای برای درخواست حضور بفرستد (اختیاری)
+        document.getElementById('controls').innerHTML = '';
+        document.getElementById('attendanceMsg').innerText = 'شما هنوز قادر به ورود به جلسه نیستید.';
+        // پایان
+      } else {
+        // ثبت حضور
+        markAttendanceLocal(name);
+        // ورود به Jitsi (با میکروفون و دوربین خاموش برای دانش‌آموز)
+        startJitsi({startWithAudioMuted:true, startWithVideoMuted:true});
+      }
+    } else {
+      // معلم: اجازهٔ ورود مستقیم و دسترسی به کنترل‌ها
+      startJitsi({startWithAudioMuted:false, startWithVideoMuted:false});
+      // نمایش کنترل‌های معلم: کپی لینک، قفل، پایان
+      renderTeacherControls();
+    }
+
+    // نمایش فایل‌های عمومی (فایل‌های معلم)
+    function renderPublicFiles(){
+      const FILES_KEY = 'pardis_files_9_2';
+      const files = JSON.parse(localStorage.getItem(FILES_KEY) || '[]');
+      const box = document.getElementById('publicFiles');
+      box.innerHTML = '';
+      if(!files.length) { box.innerHTML = '<p class="kv">هیچ فایلی آپلود نشده</p>'; return; }
+      files.forEach((f,idx)=>{
+        const div = document.createElement('div'); div.className='file-row';
+        const nameSpan = document.createElement('div'); nameSpan.innerText = f.name + ' — ' + f.uploadedBy + ' — ' + f.time;
+        const actions = document.createElement('div');
+        const dl = document.createElement('button'); dl.innerText='دانلود'; dl.onclick = ()=> {
+          const a=document.createElement('a'); a.href=f.data; a.download=f.name; a.click();
+        };
+        actions.appendChild(dl);
+        div.appendChild(nameSpan); div.appendChild(actions);
+        box.appendChild(div);
+      });
+    }
+
+    renderPublicFiles();
+
+    // Jitsi
+    let api = null;
+    function startJitsi(opts){
+      const domain = "meet.jit.si";
+      const options = {
+        roomName: room,
+        width: '100%',
+        height: '100%',
+        parentNode: document.querySelector('#jitsi-container'),
+        configOverwrite: {
+          startWithAudioMuted: opts.startWithAudioMuted,
+          startWithVideoMuted: opts.startWithVideoMuted
+        },
+        interfaceConfigOverwrite: {},
+        userInfo: { displayName: name }
+      };
+      api = new JitsiMeetExternalAPI(domain, options);
+      // event: participant joined
+      api.addEventListener('participantJoined', p => {
+        console.log('joined', p);
+      });
+      api.addEventListener('videoConferenceJoined', p => {
+        console.log('me joined', p);
+      });
+    }
+
+    // کنترل‌های معلم
+    function renderTeacherControls(){
+      const controls = document.getElementById('controls');
+      controls.innerHTML = '';
+      const btnCopy = document.createElement('button'); btnCopy.className='ctrl-btn'; btnCopy.innerText = 'کپی لینک برای دانش‌آموز';
+      const btnLock = document.createElement('button'); btnLock.className='ctrl-btn'; btnLock.innerText='قفل اتاق';
+      const btnUnlock = document.createElement('button'); btnUnlock.className='ctrl-btn'; btnUnlock.innerText='بازکردن قفل';
+      const btnEnd = document.createElement('button'); btnEnd.className='ctrl-btn danger'; btnEnd.innerText='پایان کلاس';
+      controls.appendChild(btnCopy); controls.appendChild(btnLock); controls.appendChild(btnUnlock); controls.appendChild(btnEnd);
+
+      btnCopy.onclick = () => {
+        const link = location.origin + location.pathname + '?role=student&room=' + encodeURIComponent(room);
+        navigator.clipboard.writeText(link).then(()=> alert('لینک دانش‌آموزان کپی شد:\n' + link));
+      };
+      btnLock.onclick = () => {
+        const pwd = prompt('رمز برای ورود دانش‌آموزان را وارد کن:');
+        if(!pwd) return;
+        // ذخیره رمز در roomObj
+        const RO = JSON.parse(localStorage.getItem(ROOM_KEY) || '{}');
+        RO.password = pwd;
+        localStorage.setItem(ROOM_KEY, JSON.stringify(RO));
+        try{ api.executeCommand('password', pwd); alert('رمز ست شد.'); }catch(e){ alert('رمز ست شد (ممکن است در بعضی حالت‌ها Jitsi API پاسخی ندهد).'); }
+      };
+      btnUnlock.onclick = () => {
+        const RO = JSON.parse(localStorage.getItem(ROOM_KEY) || '{}'); delete RO.password; localStorage.setItem(ROOM_KEY, JSON.stringify(RO));
+        try{ api.executeCommand('password', ''); alert('قفل باز شد.'); }catch(e){ alert('قفل باز شد (ممکن است در بعضی حالت‌ها Jitsi API پاسخی ندهد).'); }
+      };
+      btnEnd.onclick = () => {
+        if(!confirm('آیا می‌خواهی کلاس را پایان دهی؟')) return;
+        try{ api.executeCommand('hangup'); }catch(e){}
+        // برگشت به پنل معلم
+        window.location.href = 'teacher-dashboard.html?name=' + encodeURIComponent(name);
+      };
+    }
+
+    // حضور محلی ثبت شود (localStorage) ــ همچنین پنل معلم از این مقدار استفاده می‌کند
+    function markAttendanceLocal(studentName){
+      try{
+        const ATT_KEY = 'pardis_attendance_9_2';
+        const att = JSON.parse(localStorage.getItem(ATT_KEY) || '{}');
+        if(!att[studentName]) att[studentName] = new Date().toLocaleString();
+        localStorage.setItem(ATT_KEY, JSON.stringify(att));
+        document.getElementById('attendanceMsg').innerText = 'حضور شما ثبت شد: ' + att[studentName];
+        // اگر پنل معلم باز است، او خودکار اطلاعات را می‌بیند (LocalStorage همگام است چون روی همان دستگاه ذخیره شده)
+      }catch(e){ console.error(e); }
+    }
+
+    // تابع ارسال تکلیف توسط دانش‌آموز
+    function submitHomework(){
+      const f = document.getElementById('hwFile').files[0];
+      if(!f){ alert('ابتدا فایل تکلیف را انتخاب کن'); return; }
+      // بررسی اینکه دانش‌آموز لینک درست دارد
+      const RO = JSON.parse(localStorage.getItem(ROOM_KEY) || 'null');
+      if(!RO || RO.room !== room){ alert('اتاق معتبر نیست؛ از معلم لینک را بگیر'); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const arr = JSON.parse(localStorage.getItem('pardis_submissions_9_2') || '[]');
+        arr.push({student: name, name: f.name, data: e.target.result, time: new Date().toLocaleString()});
+        localStorage.setItem('pardis_submissions_9_2', JSON.stringify(arr));
+        document.getElementById('submitMsg').innerText = 'تکلیف ارسال شد.';
+        setTimeout(()=> document.getElementById('submitMsg').innerText = '', 4000);
+      };
+      reader.readAsDataURL(f);
+    }
+
+    // در صورتی که دانش‌آموز وارد شد، فراخوانی ثبت حضور:
+    if(role === 'student' && roomObj && roomObj.room === room){
+      markAttendanceLocal(name);
+    }
+
+    // نکته: چون همه چیز با LocalStorage کار می‌کند، اگر معلم و دانش‌آموز روی دستگاه‌های مختلف باشند،
+    // معلم حضور را در پنل خودش می‌بیند (localStorage روی مرورگر معلم)،
+    // و دانش‌آموز هم ثبت در localStorage دستگاه خودش انجام می‌دهد. برای همگام‌سازی واقعی بین همهٔ کاربران لازم است backend (مثلاً Firebase) اضافه شود.
+  </script>
+</body>
+</html>

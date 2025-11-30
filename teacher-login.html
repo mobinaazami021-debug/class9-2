@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>ورود معلم — مدرسه پردیس</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">ورود معلم — مدرسه پردیس</div>
+    <div class="card card-wide">
+      <h3>اطلاعات معلم</h3>
+      <input id="teacherName" class="input" placeholder="نام و نام خانوادگی" />
+      <input id="teacherPass" class="input" placeholder="رمز معلم" type="password"/>
+      <div class="center">
+        <button class="btn" onclick="login()">ورود</button>
+      </div>
+      <p class="small">رمز پیش‌فرض: <strong>pardis-teacher-2025</strong> — برای امنیت بیشتر بعداً تغییر بده.</p>
+      <p class="kv">بعد از ورود معلم می‌تواند لیست دانش‌آموزان را وارد/ویرایش کند، اتاق بسازد و فایل‌ها را آپلود کند.</p>
+    </div>
+  </div>
+
+  <script>
+    function login(){
+      const name = document.getElementById('teacherName').value.trim();
+      const pass = document.getElementById('teacherPass').value.trim();
+      if(!name){ alert('لطفاً نام خود را وارد کنید'); return; }
+      const SECRET = 'pardis-teacher-2025';
+      if(pass !== SECRET){ alert('رمز اشتباه است'); return; }
+      // رفتن به داشبورد معلم با پارامتر نام
+      window.location.href = 'teacher-dashboard.html?name=' + encodeURIComponent(name);
+    }
+  </script>
+</body>
+</html>
